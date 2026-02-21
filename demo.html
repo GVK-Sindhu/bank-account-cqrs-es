@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank API Demo Dashboard</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; max-width: 1000px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 1.5rem; }
+        h2 { margin-top: 0; color: var(--primary); font-size: 1.25rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem; }
+        input, select { width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; cursor: pointer; font-weight: 600; width: 100%; }
+        button:hover { opacity: 0.9; }
+        .secondary { background: #64748b; margin-top: 0.5rem; }
+        #logs { background: #1e293b; color: #38bdf8; padding: 1rem; border-radius: 8px; font-family: monospace; height: 300px; overflow-y: auto; font-size: 0.75rem; }
+        .status-ok { color: var(--success); }
+        .status-err { color: var(--danger); }
+        .item { padding: 0.5rem; border-bottom: 1px solid #f1f5f9; font-size: 0.875rem; }
+        .timestamp { color: #94a3b8; font-size: 0.7rem; }
+    </style>
+</head>
+<body>
+    <h1>🏦 Bank Account (ES/CQRS) Demo</h1>
+    
+    <div class="grid">
+        <div class="col">
+            <div class="card">
+                <h2>1. Create Account</h2>
+                <div class="form-group">
+                    <label>Account ID</label>
+                    <input type="text" id="create-id" placeholder="e.g. demo-123">
+                </div>
+                <div class="form-group">
+                    <label>Owner Name</label>
+                    <input type="text" id="create-owner" placeholder="John Doe">
+                </div>
+                <div class="form-group">
+                    <label>Initial Balance</label>
+                    <input type="number" id="create-balance" value="1000">
+                </div>
+                <button onclick="createAccount()">Create Account</button>
+            </div>
+
+            <div class="card">
+                <h2>2. Transaction</h2>
+                <div class="form-group">
+                    <label>Account ID</label>
+                    <input type="text" id="tx-id" placeholder="demo-123">
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="tx-type">
+                        <option value="deposit">Deposit</option>
+                        <option value="withdraw">Withdraw</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Amount</label>
+                    <input type="number" id="tx-amount" value="100">
+                </div>
+                <button onclick="submitTransaction()">Submit Transaction</button>
+            </div>
+            
+            <div class="card">
+                <h2>3. Maintenance</h2>
+                <button class="secondary" onclick="checkStatus()">Projection Status</button>
+                <button class="secondary" style="background:#dc2626; margin-top:10px" onclick="rebuildProjections()">Full Rebuild</button>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card">
+                <h2>Account info & History</h2>
+                <div class="form-group">
+                    <input type="text" id="query-id" placeholder="Enter Account ID to view" style="width:70%">
+                    <button onclick="loadInfo()" style="width:28%">Load</button>
+                </div>
+                <div id="account-result"></div>
+                <h3>Transactions</h3>
+                <div id="transactions-list" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+
+            <div class="card">
+                <h2>4. Time-Travel</h2>
+                <div class="form-group">
+                    <label>Target Timestamp (ISO)</label>
+                    <input type="text" id="tt-time" placeholder="2026-02-21T03:00:00Z">
+                </div>
+                <button onclick="timeTravel()">Query Historical Balance</button>
+                <div id="tt-result" style="margin-top:10px; font-weight:bold"></div>
+            </div>
+
+            <div class="card">
+                <h2>System Logs</h2>
+                <div id="logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:8080/api';
+
+        function log(msg, isError = false) {
+            const l = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = isError ? 'status-err' : 'status-ok';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            l.appendChild(entry);
+            l.scrollTop = l.scrollHeight;
+        }
+
+        async function createAccount() {
+            const id = document.getElementById('create-id').value;
+            const owner = document.getElementById('create-owner').value;
+            const bal = document.getElementById('create-balance').value;
+            if(!id || !owner) return alert('Missing fields');
+
+            try {
+                const res = await fetch(`${API}/accounts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId: id, ownerName: owner, initialBalance: parseFloat(bal), currency: 'USD' })
+                });
+                const data = await res.json();
+                if(res.ok) {
+                    log(`SUCCESS: Account ${id} created.`);
+                    document.getElementById('tx-id').value = id;
+                    document.getElementById('query-id').value = id;
+                } else log(`ERROR: ${data.error}`, true);
+            } catch (e) { log(e.message, true); }
+        }
+
+        async function submitTransaction() {
+            const id = document.getElementById('tx-id').value;
+            const type = document.getElementById('tx-type').value;
+            const amount = document.getElementById('tx-amount').value;
+            
+            try {
+                const res = await fetch(`${API}/accounts/${id}/${type}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        amount: parseFloat(amount), 
+                        description: `Demo ${type}`, 
+                        transactionId: 'tx-' + Math.random().toString(36).substr(2, 9) 
+                    })
+                });
+                const data = await res.json();
+                if(res.ok) {
+                    log(`SUCCESS: ${type} of ${amount} accepted.`);
+                    loadInfo();
+                } else log(`ERROR: ${data.error}`, true);
+            } catch (e) { log(e.message, true); }
+        }
+
+        async function loadInfo() {
+            const id = document.getElementById('query-id').value;
+            if(!id) return;
+            
+            try {
+                const res = await fetch(`${API}/accounts/${id}`);
+                const data = await res.json();
+                if(res.ok) {
+                    document.getElementById('account-result').innerHTML = `
+                        <p><strong>Owner:</strong> ${data.ownerName}</p>
+                        <p><strong>Balance:</strong> <span style="font-size:1.5rem; color:var(--success)">${data.balance} ${data.currency}</span></p>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                    `;
+                    
+                    const txRes = await fetch(`${API}/accounts/${id}/transactions`);
+                    const txData = await txRes.json();
+                    const list = document.getElementById('transactions-list');
+                    list.innerHTML = txData.items.map(t => `
+                        <div class="item">
+                            <span class="timestamp">${new Date(t.timestamp).toLocaleString()}</span><br>
+                            <strong>${t.type}</strong>: ${t.amount} - ${t.description}
+                        </div>
+                    `).join('');
+                } else log(`ERROR: ${data.error}`, true);
+            } catch (e) { log(e.message, true); }
+        }
+
+        async function timeTravel() {
+            const id = document.getElementById('query-id').value;
+            const time = document.getElementById('tt-time').value;
+            if(!id || !time) return alert('Enter ID and Timestamp');
+            
+            try {
+                const res = await fetch(`${API}/accounts/${id}/balance-at/${encodeURIComponent(time)}`);
+                const data = await res.json();
+                if(res.ok) {
+                    document.getElementById('tt-result').innerText = `Balance was: ${data.balanceAt}`;
+                    log(`Time-Travel success: Balance at ${time} was ${data.balanceAt}`);
+                } else log(`ERROR: ${data.error}`, true);
+            } catch (e) { log(e.message, true); }
+        }
+
+        async function checkStatus() {
+            try {
+                const res = await fetch(`${API.replace('/api', '')}/projections/status`);
+                const data = await res.json();
+                log(`STATUS: Total Events: ${data.totalEventsInStore}, Lag: ${data.projections[0].lag}`);
+            } catch (e) { log(e.message, true); }
+        }
+
+        async function rebuildProjections() {
+            if(!confirm('Are you sure? This will wipe and replay all events.')) return;
+            try {
+                const res = await fetch(`${API.replace('/api', '')}/projections/rebuild`, { method: 'POST' });
+                log(`REBUILD: Signal sent to backend.`);
+            } catch (e) { log(e.message, true); }
+        }
+
+        // Set a default timestamp for time-travel convenience
+        document.getElementById('tt-time').value = new Date().toISOString();
+    </script>
+</body>
+</html>
