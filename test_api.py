@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import datetime
 
-BASE_URL = "http://localhost:3000/api"
+BASE_URL = "http://localhost:8080/api"
 
 def print_step(message):
     print(f"\n[STEP] {message}")
@@ -143,7 +143,7 @@ def test_close_success(account_id):
 def run_tests():
     try:
         # Check Health
-        health = requests.get(f"http://localhost:3000/health")
+        health = requests.get(f"http://localhost:8080/health")
         if health.status_code != 200:
             print("[X] API is not healthy or reachable. Is Docker running?")
             return

@@ -5,7 +5,7 @@ import uuid
 import urllib.parse
 from datetime import datetime, timezone
 
-BASE_URL = "http://localhost:3000/api"
+BASE_URL = "http://localhost:8080/api"
 
 def test_pagination():
     print("\n[STEP] Testing Pagination")
